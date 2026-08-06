@@ -6,33 +6,38 @@
  *   PLUGIN_CONFIG_PATH=/path/to/middleware.config.ts bun run src/server.ts
  *
  * Reads BOT_TOKEN from environment, optionally loads middleware from
- * PLUGIN_CONFIG_PATH (added in Phase 4). Falls back to empty middleware array
- * if the path is missing or unset.
+ * PLUGIN_CONFIG_PATH. Falls back to empty middleware array if the path
+ * is missing, unset, or fails to load.
  */
 
 import { createServer } from './index.ts'
-import type { PluginConfig, Middleware } from './types.ts'
+import type { PluginConfig } from './types.ts'
 
 /**
- * Load base config from environment variables.
- * Middleware loading via PLUGIN_CONFIG_PATH is added in Phase 4.
+ * Dynamically import middleware config from PLUGIN_CONFIG_PATH.
+ * Returns an empty middleware array on any failure.
  */
-function loadConfig(): PluginConfig {
-  const botToken = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? ''
-  if (!botToken) {
-    process.stderr.write('tg-plugin: BOT_TOKEN env var is required\n')
-    process.exit(1)
+async function loadConfig(): Promise<Partial<PluginConfig>> {
+  const configPath = process.env.PLUGIN_CONFIG_PATH
+  if (!configPath) {
+    console.log('[tg-plugin] no PLUGIN_CONFIG_PATH, using 0 middleware')
+    return { middleware: [] }
   }
-
-  return {
-    botToken,
-    allowedUserIds: [],
-    middleware: [] as Middleware[],
-    onMessage: async (_ctx) => {
-      // Default handler: no-op. Override via PLUGIN_CONFIG_PATH in Phase 4.
-    },
+  try {
+    const mod = await import(configPath)
+    const mw = mod.pluginConfig?.middleware ?? mod.middleware ?? []
+    console.log(`[tg-plugin] loaded ${mw.length} middleware from ${configPath}`)
+    return { middleware: mw }
+  } catch (e) {
+    console.log(`[tg-plugin] config load failed (${e}), using 0 middleware`)
+    return { middleware: [] }
   }
 }
 
-const server = createServer(loadConfig())
-server.start()
+const config = await loadConfig()
+createServer({
+  ...config,
+  botToken: process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? '',
+  allowedUserIds: [],
+  onMessage: async () => {},
+}).start()
