@@ -276,3 +276,22 @@ export function lintOutbound(method: string, payload: any): LintResult[] {
 
   return results
 }
+
+const ARTIFACT_FILENAME_PATTERN = /((?:phase-\d+-(?:report|audit)|plan(?:-audit)?|context(?:-audit)?|roles|fix-report|brief|grill-status)\.md)/g
+
+function escapeMarkdownV2(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+}
+
+export function transformOutbound(text: string, slug: string, baseUrl: string, parseMode?: string): string {
+  if (!slug || slug === 'unknown') return text
+  const alreadyLinked = text.includes('href=') || text.includes('](http')
+  ARTIFACT_FILENAME_PATTERN.lastIndex = 0
+  return text.replace(ARTIFACT_FILENAME_PATTERN, (filename) => {
+    if (alreadyLinked) return filename
+    const url = `${baseUrl}/artifacts/${slug}/implementation/${slug}/${filename}`
+    if (parseMode === 'HTML') return `<a href="${url}">${filename}</a>`
+    if (parseMode === 'MarkdownV2') return `[${escapeMarkdownV2(filename)}](${url})`
+    return `[${filename}](${url})`
+  })
+}
