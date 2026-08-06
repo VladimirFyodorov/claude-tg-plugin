@@ -274,6 +274,45 @@ export function lintOutbound(method: string, payload: any): LintResult[] {
     })
   }
 
+  // --- File rules: apply to any payload with text/caption ---
+  // Check raw payload directly (not gated on TEXT_METHODS/CAPTION_METHODS) to handle all methods including 'reply'
+  const fileRawContent: string | undefined = payload?.text ?? payload?.caption
+  if (fileRawContent != null) {
+    // Strip fenced code blocks and inline code to avoid false positives
+    const textForFileChecks = fileRawContent
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`[^`\n]*`/g, '')
+    // Strip Markdown links [text](url) and angle-bracket URLs <url> so linked filenames don't fire
+    const textWithoutLinks = textForFileChecks
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '')
+      .replace(/<[^>]+>/g, '')
+    // FILE-1 pattern: word chars + common file extension
+    const file1Pattern = /\b([\w][\w-]*\.(md|sh|ts|py|json|yaml|yml|txt|log))\b/g
+    const file1Matches: string[] = []
+    let fileMatch: RegExpExecArray | null
+    // eslint-disable-next-line no-cond-assign
+    while ((fileMatch = file1Pattern.exec(textWithoutLinks)) !== null) {
+      const filename = fileMatch[1]
+      if (!file1Matches.includes(filename)) {
+        file1Matches.push(filename)
+        results.push({
+          rule: 'FILE-1',
+          severity: 'WARN',
+          message: `FILE-1: Bare file mention "${filename}" — wrap in a link`,
+          match: filename,
+        })
+      }
+    }
+    // FILE-2: fires when FILE-1 fired AND ARTIFACT_SERVER_URL is not configured
+    if (file1Matches.length > 0 && !process.env.ARTIFACT_SERVER_URL) {
+      results.push({
+        rule: 'FILE-2',
+        severity: 'WARN',
+        message: 'FILE-2: ARTIFACT_SERVER_URL not configured — cannot suggest artifact link',
+      })
+    }
+  }
+
   return results
 }
 
