@@ -89,3 +89,75 @@ export interface TgPlugin {
   setState(mode: 'active' | 'silent'): void
   stop(): Promise<void>
 }
+
+// ─── Middleware pipeline API (Phase 2) ────────────────────────────────────────
+
+/**
+ * Attachment object passed through the middleware pipeline.
+ */
+export interface TgAttachment {
+  kind: 'voice' | 'photo' | 'document' | 'audio' | 'video' | 'sticker'
+  file_id: string
+  local_path?: string
+}
+
+/**
+ * Context object passed to every middleware in the pipeline.
+ */
+export interface MiddlewareCtx {
+  /** Original inbound text (read-only after normalisation) */
+  text: string
+  /** Outbound text — middlewares may append/replace */
+  textOut: string
+  chat_id: string
+  user: string
+  user_id: string
+  message_id: string
+  /** ISO-8601 timestamp of the inbound message */
+  ts: string
+  attachment?: TgAttachment
+  /** Arbitrary per-request state bag for middleware communication */
+  state: Record<string, unknown>
+  /** Raw Grammy context object — use for advanced Grammy features */
+  grammyCtx: any
+}
+
+/**
+ * A middleware function in the pipeline (onion/koa style).
+ */
+export type Middleware = (ctx: MiddlewareCtx, next: () => Promise<void>) => Promise<void>
+
+/**
+ * Public configuration for createServer().
+ */
+export interface PluginConfig {
+  /** Telegram bot token */
+  botToken: string
+  /** Numeric Telegram user IDs allowed to send messages; empty = allow all */
+  allowedUserIds: number[]
+  /** Called after all middleware complete */
+  onMessage: (ctx: MiddlewareCtx) => Promise<void>
+  /** User-supplied middleware inserted between linter and deliver stages */
+  middleware?: Middleware[]
+  /** STT (speech-to-text) stage config */
+  stt?: {
+    enabled: boolean
+    apiKey: string
+  }
+  /** Linter stage config */
+  linter?: {
+    rules: LintRule[]
+  }
+  /** HTTP server port (default: 3338) */
+  httpPort?: number
+  /** HTTP API key for X-TG-Server-Key header auth */
+  httpApiKey?: string
+}
+
+/**
+ * Server handle returned by createServer().
+ */
+export interface ServerHandle {
+  start(): void
+  stop(): Promise<void>
+}

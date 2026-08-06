@@ -5,6 +5,53 @@ export interface LintResult {
   match?: string
 }
 
+import type { LintRule } from './types.ts'
+
+/**
+ * Built-in lint rules expressed as LintRule objects.
+ * These wrap the lintOutbound function and are used by createPlugin.
+ */
+export const builtinRules: LintRule[] = [
+  {
+    id: 'builtin',
+    severity: 'WARN' as const,
+    check(method: string, payload: Record<string, unknown>): LintResult[] {
+      return lintOutbound(method, payload)
+    },
+  },
+]
+
+/**
+ * Create a lint checker function from a set of rules.
+ * Called per-message inside Grammy's API middleware.
+ */
+export function createLintChecker(
+  rules: LintRule[],
+  mode: 'soft' | 'hard' = 'soft',
+  onViolation?: (violations: LintResult[], method: string) => void,
+): (method: string, payload: Record<string, unknown>) => void {
+  return (method: string, payload: Record<string, unknown>): void => {
+    const violations: LintResult[] = []
+    for (const rule of rules) {
+      violations.push(...rule.check(method, payload))
+    }
+    if (violations.length === 0) return
+    if (onViolation) {
+      onViolation(violations, method)
+    } else {
+      for (const v of violations) {
+        process.stderr.write(`tg-plugin linter [${v.severity}] ${v.rule}: ${v.message}\n`)
+      }
+    }
+    if (mode === 'hard') {
+      const errors = violations.filter(v => v.severity === 'ERROR')
+      if (errors.length > 0) {
+        throw new Error(`Linter blocked outbound call "${method}": ${errors.map(e => e.rule).join(', ')}`)
+      }
+    }
+  }
+}
+
 // Caption-bearing methods per Telegram Bot API
 const CAPTION_METHODS = new Set([
   'sendPhoto',
