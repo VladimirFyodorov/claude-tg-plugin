@@ -33,8 +33,9 @@ export type {
 
 export { compose, normalizeGrammyCtx } from './middleware.ts'
 
-export { createMcpChannel } from './mcp/channel.ts'
-export type { McpChannelHooks, McpChannelOpts, McpChannel } from './mcp/channel.ts'
+export { createMcpChannel } from './mcp/server.ts'
+export type { McpChannelHooks, McpChannelOpts, McpChannel } from './mcp/server.ts'
+export type { McpToolDef, AccessControlHooks } from './types.ts'
 
 /**
  * Build the middleware pipeline and return a server handle.

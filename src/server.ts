@@ -13,9 +13,9 @@
  */
 
 import { createPlugin } from './plugin.ts'
-import { createMcpChannel } from './mcp/channel.ts'
+import { createMcpChannel } from './mcp/server.ts'
 import type { TgPluginConfig } from './types.ts'
-import type { McpChannelHooks } from './mcp/channel.ts'
+import type { McpChannelHooks } from './mcp/server.ts'
 
 async function loadConfig(): Promise<Partial<TgPluginConfig> & { mcpHooks?: McpChannelHooks }> {
   const configPath = process.env.PLUGIN_CONFIG_PATH

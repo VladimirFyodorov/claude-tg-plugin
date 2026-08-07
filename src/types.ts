@@ -107,6 +107,51 @@ export interface TgPluginInternal extends TgPlugin {
   startPolling(onStart?: (info: { username: string }) => void): void
 }
 
+// ─── MCP types ────────────────────────────────────────────────────────────────
+
+/**
+ * Access control hooks for the MCP channel layer.
+ * Injected by the consumer (e.g. dev-workflow middleware.config.ts).
+ * Re-exported from src/mcp/server.ts — also re-exported here for convenience.
+ */
+export interface McpChannelHooks {
+  /** Throw to reject a send/react/edit to the given chat_id. */
+  assertAllowedChat?: (chat_id: string) => void
+  /** Throw to reject a file attachment at the given path. */
+  assertSendable?: (path: string) => void
+  /** Return the list of chat_ids that receive permission request keyboards. */
+  getAllowedRecipients?: () => string[]
+  /** Override chunk size/mode/replyToMode for the reply tool. */
+  getChunkSettings?: () => { limit: number; mode: 'length' | 'newline'; replyToMode: 'first' | 'all' | 'off' }
+}
+
+/**
+ * A single MCP tool definition (name + inputSchema).
+ * Used to describe tools registered by the MCP channel layer.
+ */
+export interface McpToolDef {
+  name: string
+  description: string
+  inputSchema: {
+    type: 'object'
+    properties: Record<string, unknown>
+    required?: string[]
+  }
+}
+
+/**
+ * Access control hooks for pairing and allowlist enforcement.
+ * Typically wired in from middleware/access-control.ts in the consumer repo.
+ */
+export interface AccessControlHooks {
+  /** Return true if the given user_id is on the allowlist. */
+  isAllowed(user_id: string): boolean
+  /** Return true if the given chat_id is on the allowlist. */
+  isChatAllowed(chat_id: string): boolean
+  /** Called when an unknown user attempts to send a message. */
+  onUnknownUser?: (user_id: string, chat_id: string) => Promise<void>
+}
+
 // ─── Middleware pipeline API (Phase 2) ────────────────────────────────────────
 
 /**
