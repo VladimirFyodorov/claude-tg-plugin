@@ -273,8 +273,25 @@ export function createPlugin(config: TgPluginConfig): TgPluginInternal {
     )
   }
 
-  // ─── User middleware ──────────────────────────────────────────────────────────
+  // ─── MiddlewareCtx adapter ────────────────────────────────────────────────────
+  // Consumer middleware expects MiddlewareCtx shape (ctx.state, ctx.text, etc.)
+  // but Grammy Context doesn't have these fields. This adapter bridges the two.
   if (config.middleware && config.middleware.length > 0) {
+    bot.use(async (ctx, next) => {
+      const c = ctx as any
+      c.state = c.state ?? {}
+      if (ctx.message) {
+        c.text = c.text ?? ctx.message.text ?? (ctx.message as any).caption ?? ''
+        c.textOut = c.textOut ?? c.text
+        c.user = ctx.from?.username ?? String(ctx.from?.id ?? '')
+        c.user_id = String(ctx.from?.id ?? '')
+        c.chat_id = String(ctx.chat?.id ?? '')
+        c.message_id = String(ctx.message.message_id ?? '')
+        c.ts = new Date((ctx.message.date ?? 0) * 1000).toISOString()
+        c.grammyCtx = ctx
+      }
+      await next()
+    })
     for (const mw of config.middleware) {
       bot.use(mw)
     }
