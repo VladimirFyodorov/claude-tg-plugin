@@ -1,6 +1,6 @@
 // Public TypeScript interfaces for claude-tg-plugin
 
-import type { Context } from 'grammy'
+import type { Bot, Context } from 'grammy'
 
 // --- Lint types ---
 
@@ -18,6 +18,11 @@ export interface LintRule {
 }
 
 // --- Config ---
+
+export interface BotCommand {
+  command: string
+  description: string
+}
 
 export interface TgPluginConfig {
   // Required
@@ -51,6 +56,12 @@ export interface TgPluginConfig {
 
   // Custom Grammy middleware (applied in order)
   middleware?: Array<(ctx: Context, next: () => Promise<void>) => Promise<void>>
+
+  // Bot commands to register via setMyCommands on polling start
+  botCommands?: BotCommand[]
+
+  // Defer polling start until startPolling() is called (for MCP wiring)
+  deferStart?: boolean
 }
 
 // --- Inbound message ---
@@ -88,6 +99,12 @@ export interface TgPlugin {
   send(params: SendParams): Promise<{ message_id: number }>
   setState(mode: 'active' | 'silent'): void
   stop(): Promise<void>
+}
+
+export interface TgPluginInternal extends TgPlugin {
+  bot: Bot
+  pluginState: { mode: 'active' | 'silent' }
+  startPolling(onStart?: (info: { username: string }) => void): void
 }
 
 // ─── Middleware pipeline API (Phase 2) ────────────────────────────────────────

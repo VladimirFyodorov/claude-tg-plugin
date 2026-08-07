@@ -22,14 +22,19 @@ export type {
   Middleware,
   TgAttachment,
   TgPluginConfig,
+  TgPluginInternal,
   TgPlugin,
   TgMessage,
   SendParams,
   LintRule,
   LintResult,
+  BotCommand,
 } from './types.ts'
 
 export { compose, normalizeGrammyCtx } from './middleware.ts'
+
+export { createMcpChannel } from './mcp/channel.ts'
+export type { McpChannelHooks, McpChannelOpts, McpChannel } from './mcp/channel.ts'
 
 /**
  * Build the middleware pipeline and return a server handle.

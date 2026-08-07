@@ -5,6 +5,7 @@
   "exports": "./src/index.ts",
   "main": "src/index.ts",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "grammy": "^1.36.0",
     "hono": "^4.8.4",
     "zod": "^3.25.0"

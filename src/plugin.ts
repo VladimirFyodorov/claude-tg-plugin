@@ -7,7 +7,7 @@
  * No MCP SDK, no hardcoded instance paths, no orchestrator env var reads.
  */
 
-import { Bot, GrammyError, InlineKeyboard, InputFile } from 'grammy'
+import { Bot, GrammyError, InputFile } from 'grammy'
 import type { Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { writeFileSync, mkdirSync } from 'fs'
@@ -15,7 +15,7 @@ import { homedir } from 'os'
 import { join, extname } from 'path'
 import { randomBytes } from 'crypto'
 
-import type { TgPluginConfig, TgPlugin, TgMessage, SendParams } from './types.ts'
+import type { TgPluginConfig, TgPlugin, TgPluginInternal, TgMessage, SendParams } from './types.ts'
 import { builtinRules, createLintChecker } from './linter.ts'
 import { initDb, persistMessage } from './persistence.ts'
 import { makeSttMiddleware } from './stt.ts'
@@ -47,12 +47,15 @@ function safeName(s: string | undefined): string | undefined {
 }
 
 /**
- * Create and start the Telegram plugin.
+ * Create the Telegram plugin.
+ *
+ * With deferStart: true, polling does not begin until startPolling() is called.
+ * This allows wiring MCP before the bot starts receiving messages.
  *
  * @param config - Plugin configuration object
- * @returns TgPlugin handle with send / setState / stop methods
+ * @returns TgPluginInternal handle with bot, send, setState, stop, startPolling
  */
-export function createPlugin(config: TgPluginConfig): TgPlugin {
+export function createPlugin(config: TgPluginConfig): TgPluginInternal {
   // ─── Grammy bot ──────────────────────────────────────────────────────────────
   const bot = new Bot(config.botToken)
 
@@ -83,9 +86,6 @@ export function createPlugin(config: TgPluginConfig): TgPlugin {
 
   // ─── STT inbox dir ───────────────────────────────────────────────────────────
   const sttInboxDir = DEFAULT_STT_INBOX
-
-  // ─── Pending permissions map for callback handler ────────────────────────────
-  const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
 
   // ─── send() implementation ────────────────────────────────────────────────────
   const defaultChatId = config.chatId
@@ -280,58 +280,6 @@ export function createPlugin(config: TgPluginConfig): TgPlugin {
     }
   }
 
-  // ─── Callback query handler ───────────────────────────────────────────────────
-  bot.on('callback_query:data', async ctx => {
-    const data = ctx.callbackQuery.data
-    const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(data)
-    if (!m) {
-      await ctx.answerCallbackQuery().catch(() => {})
-      return
-    }
-
-    // Check if sender is allowed
-    if (!isAllowed(ctx)) {
-      await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
-      return
-    }
-
-    const [, behavior, request_id] = m
-
-    if (behavior === 'more') {
-      const details = pendingPermissions.get(request_id)
-      if (!details) {
-        await ctx.answerCallbackQuery({ text: 'Details no longer available.' }).catch(() => {})
-        return
-      }
-      const { tool_name, description, input_preview } = details
-      let prettyInput: string
-      try {
-        prettyInput = JSON.stringify(JSON.parse(input_preview), null, 2)
-      } catch {
-        prettyInput = input_preview
-      }
-      const expanded =
-        `Permission: ${tool_name}\n\n` +
-        `tool_name: ${tool_name}\n` +
-        `description: ${description}\n` +
-        `input_preview:\n${prettyInput}`
-      const keyboard = new InlineKeyboard()
-        .text('Allow', `perm:allow:${request_id}`)
-        .text('Deny', `perm:deny:${request_id}`)
-      await ctx.editMessageText(expanded, { reply_markup: keyboard }).catch(() => {})
-      await ctx.answerCallbackQuery().catch(() => {})
-      return
-    }
-
-    pendingPermissions.delete(request_id)
-    const label = behavior === 'allow' ? 'Allowed' : 'Denied'
-    await ctx.answerCallbackQuery({ text: label }).catch(() => {})
-    const msg = ctx.callbackQuery.message
-    if (msg && 'text' in msg && msg.text) {
-      await ctx.editMessageText(`${msg.text}\n\n${label}`).catch(() => {})
-    }
-  })
-
   // ─── Message handlers ─────────────────────────────────────────────────────────
 
   bot.on('message:text', async ctx => {
@@ -481,44 +429,59 @@ export function createPlugin(config: TgPluginConfig): TgPlugin {
     process.stderr.write(`tg-plugin: uncaught exception: ${err}\n`)
   })
 
-  // Start polling in background — fire and forget, errors retry with backoff
-  void (async () => {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await bot.start({
-          onStart: info => {
-            attempt = 0
-            botUsername = info.username
-            process.stderr.write(`tg-plugin: polling as @${info.username}\n`)
-          },
-        })
-        return // bot.stop() was called — clean exit from loop
-      } catch (err) {
-        if (shuttingDown) return
-        if (err instanceof Error && err.message === 'Aborted delay') return
-        const is409 = err instanceof GrammyError && err.error_code === 409
-        if (is409 && attempt >= 8) {
-          process.stderr.write(
-            `tg-plugin: 409 Conflict persists after ${attempt} attempts — ` +
-            `another poller is holding the bot token. Exiting.\n`,
-          )
+  // ─── Polling with retry backoff ────────────────────────────────────────────────
+  function doStartPolling(onStart?: (info: { username: string }) => void): void {
+    void (async () => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await bot.start({
+            onStart: info => {
+              attempt = 0
+              botUsername = info.username
+              process.stderr.write(`tg-plugin: polling as @${info.username}\n`)
+              if (config.botCommands && config.botCommands.length > 0) {
+                void bot.api.setMyCommands(config.botCommands, { scope: { type: 'all_private_chats' } }).catch(() => {})
+              }
+              onStart?.(info)
+            },
+          })
           return
+        } catch (err) {
+          if (shuttingDown) return
+          if (err instanceof Error && err.message === 'Aborted delay') return
+          const is409 = err instanceof GrammyError && err.error_code === 409
+          if (is409 && attempt >= 8) {
+            process.stderr.write(
+              `tg-plugin: 409 Conflict persists after ${attempt} attempts — ` +
+              `another poller is holding the bot token. Exiting.\n`,
+            )
+            return
+          }
+          const delay = Math.min(1000 * attempt, 15000)
+          const detail = is409
+            ? `409 Conflict${attempt === 1 ? ' — another instance is polling?' : ''}`
+            : `polling error: ${err}`
+          process.stderr.write(`tg-plugin: ${detail}, retrying in ${delay / 1000}s\n`)
+          await new Promise(r => setTimeout(r, delay))
         }
-        const delay = Math.min(1000 * attempt, 15000)
-        const detail = is409
-          ? `409 Conflict${attempt === 1 ? ' — another instance is polling?' : ''}`
-          : `polling error: ${err}`
-        process.stderr.write(`tg-plugin: ${detail}, retrying in ${delay / 1000}s\n`)
-        await new Promise(r => setTimeout(r, delay))
       }
-    }
-  })()
+    })()
+  }
 
-  // ─── Return TgPlugin ──────────────────────────────────────────────────────────
+  if (!config.deferStart) {
+    doStartPolling()
+  }
+
+  // ─── Return TgPluginInternal ──────────────────────────────────────────────────
   return {
+    bot,
+    pluginState,
     send,
     setState(mode: 'active' | 'silent'): void {
       pluginState.mode = mode
+    },
+    startPolling(onStart?: (info: { username: string }) => void): void {
+      doStartPolling(onStart)
     },
     async stop(): Promise<void> {
       shutdown()
