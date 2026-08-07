@@ -46,6 +46,12 @@ export interface McpChannelOpts {
   inboxDir?: string
   hooks?: McpChannelHooks
   pluginState: { mode: 'active' | 'silent' }
+  /**
+   * Called after the MCP server is connected to the stdio transport.
+   * Use this to start background tasks that need to forward messages via notifyInbound,
+   * e.g. the synthetic-inbox poller.
+   */
+  onReady?: (channel: { notifyInbound: McpChannel['notifyInbound'] }) => void
 }
 
 /** Handle returned by createMcpChannel. */
@@ -186,10 +192,11 @@ export function createMcpChannel(opts: McpChannelOpts): McpChannel {
 
   // ── Public handle ────────────────────────────────────────────────────────────
 
-  return {
+  const handle: McpChannel = {
     server: mcp,
     async connect() {
       await connectStdio(mcp)
+      opts.onReady?.(handle)
     },
     notifyInbound(msg) {
       const cleanMeta: Record<string, string> = {}
@@ -207,4 +214,5 @@ export function createMcpChannel(opts: McpChannelOpts): McpChannel {
       })
     },
   }
+  return handle
 }

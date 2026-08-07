@@ -17,7 +17,7 @@ import { createMcpChannel } from './mcp/server.ts'
 import type { TgPluginConfig } from './types.ts'
 import type { McpChannelHooks } from './mcp/server.ts'
 
-async function loadConfig(): Promise<Partial<TgPluginConfig> & { mcpHooks?: McpChannelHooks }> {
+async function loadConfig(): Promise<Partial<TgPluginConfig> & { mcpHooks?: McpChannelHooks; onReady?: (ch: { notifyInbound: Function }) => void }> {
   const configPath = process.env.PLUGIN_CONFIG_PATH
   if (!configPath) {
     process.stderr.write('[tg-plugin] no PLUGIN_CONFIG_PATH — starting with defaults\n')
@@ -29,8 +29,9 @@ async function loadConfig(): Promise<Partial<TgPluginConfig> & { mcpHooks?: McpC
     const mw = cfg.middleware ?? mod.middleware ?? []
     const botCommands = cfg.botCommands ?? mod.botCommands
     const mcpHooks = cfg.mcpHooks ?? mod.mcpHooks
+    const onReady = cfg.onReady ?? mod.onReady
     process.stderr.write(`[tg-plugin] loaded config from ${configPath} (${mw.length} middleware)\n`)
-    return { ...cfg, middleware: mw, botCommands, mcpHooks }
+    return { ...cfg, middleware: mw, botCommands, mcpHooks, onReady }
   } catch (e) {
     process.stderr.write(`[tg-plugin] FATAL: config load failed: ${e}\n`)
     process.exit(1)
@@ -78,6 +79,7 @@ const mcpChannel = createMcpChannel({
     : undefined,
   hooks: (config as any).mcpHooks,
   pluginState: plugin.pluginState,
+  onReady: (config as any).onReady,
 })
 
 await mcpChannel.connect()
