@@ -103,6 +103,7 @@ export function createServer(config: PluginConfig): ServerHandle {
           stt: {
             provider: 'whisper' as const,
             apiKey: config.stt.apiKey,
+            language: config.stt.language,
           },
         }
       : {}),

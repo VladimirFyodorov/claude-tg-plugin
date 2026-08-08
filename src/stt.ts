@@ -32,7 +32,7 @@ export function makeSttMiddleware(config: { token: string; inboxDir: string; api
       writeFileSync(ogaPath, buf)
 
       // Convert OGA → MP3
-      const proc = Bun.spawnSync(['ffmpeg', '-i', ogaPath, mp3Path, '-y'])
+      const proc = Bun.spawnSync([process.env.FFMPEG_BIN ?? 'ffmpeg', '-i', ogaPath, mp3Path, '-y'])
       if (proc.exitCode !== 0) {
         throw new Error(`ffmpeg exited with code ${proc.exitCode}`)
       }

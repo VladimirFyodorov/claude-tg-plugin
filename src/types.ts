@@ -205,6 +205,7 @@ export interface PluginConfig {
   stt?: {
     enabled: boolean
     apiKey: string
+    language?: string
   }
   /** Linter stage config */
   linter?: {
